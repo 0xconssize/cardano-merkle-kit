@@ -1,0 +1,51 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor",
+  "elements": [
+    {
+      "id": "ECe2rYhVpbh6MHV6k-NSB",
+      "type": "text",
+      "x": 425.203125,
+      "y": 255.21875,
+      "width": 504.799560546875,
+      "height": 200,
+      "angle": 0,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a0",
+      "roundness": null,
+      "seed": 767216681,
+      "version": 289,
+      "versionNonce": 627730759,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1776064413185,
+      "link": null,
+      "locked": false,
+      "text": "Requirements\n\n- Create merklized structures in Rust/Javascript\n- Support multiple merkle algorithm\n- Support membership and non-membership (optional)\n- Create universal transcription to JSON\n- CLI tool to verify onchain with transcription\n",
+      "fontSize": 20,
+      "fontFamily": 5,
+      "textAlign": "left",
+      "verticalAlign": "top",
+      "containerId": null,
+      "originalText": "Requirements\n\n- Create merklized structures in Rust/Javascript\n- Support multiple merkle algorithm\n- Support membership and non-membership (optional)\n- Create universal transcription to JSON\n- CLI tool to verify onchain with transcription\n",
+      "autoResize": true,
+      "lineHeight": 1.25
+    }
+  ],
+  "appState": {
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {}
+}
