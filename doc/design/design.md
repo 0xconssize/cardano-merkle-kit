@@ -16,7 +16,7 @@ An off-chain verification library that provides core primitives for merkleized a
 
 **On-chain Validation** (Smart Contract Component):
 - Implemented by user validators (e.g., via Aiken smart contracts)
-- Performs structural consistency checks on the accumulator state (INV-1..7, renumbered after removal of redundant INV-5)
+- Performs structural consistency checks on the accumulator state (INV-1..6)
 - Validates UTxO chain continuity and metadata integrity
 - Does NOT verify IPFS content or cryptographic proofs
 
@@ -53,7 +53,7 @@ User validators import the library's on-chain components (invariant checks) and 
 
 1. Clear separation of on-chain validation vs off-chain verification
 
-   **On-chain (smart contract):** Validates structural consistency only (INV-1..7). Does not verify IPFS content, proofs, or binding hashes.
+   **On-chain (smart contract):** Validates structural consistency only (INV-1..6). Does not verify IPFS content, proofs, or binding hashes.
    **Off-chain (this library):** Performs all cryptographic verification (proof validation, content hashing, state reconstruction, tree identity anchoring).
    Each `AccumulatorObject` stored in IPFS MUST embed the `prev_tx_ref` (txHash + outputIndex) and `tree_index` from its corresponding datum so that off-chain verifiers can anchor the IPFS object to its on-chain position without traversing the full chain. This is a forward reference from IPFS to Cardano, which is acceptable for anchoring. What MUST NOT appear in the IPFS object is the IPFS CID itself (which would be circular).
 
@@ -71,7 +71,7 @@ User validators import the library's on-chain components (invariant checks) and 
 
 5. Cardano storage optimization: minimal datum, IPFS for full state, metadata avoids repetition
 
-   Cardano penalizes on-chain storage (UTxO size affects transaction costs; metadata has a 16KB limit). `AccumulatorDatum` stores only essential data needed for on-chain validation (descriptor, root_hash, leaf_count, binding_hash, prev_tx_ref, tree_index). `ipfs_cid` is NOT stored in the datum — it is off-chain only and is published in the producing transaction's metadata (key 674), keyed by `(prev_tx_ref.tx_hash, prev_tx_ref.output_index, tree_index)`. Off-chain verifiers retrieve it by looking up the transaction that created the UTxO. `binding_hash` remains in the datum as the sole on-chain cryptographic commitment to the IPFS content.
+   Cardano penalizes on-chain storage (UTxO size affects transaction costs; metadata has a 16KB limit). `AccumulatorDatum` stores only essential data needed for on-chain validation (descriptor, root_hash, binding_hash, prev_tx_ref, tree_index). `ipfs_cid` is NOT stored in the datum — it is off-chain only and is published in the producing transaction's metadata (key 674), keyed by `(prev_tx_ref.tx_hash, prev_tx_ref.output_index, tree_index)`. Off-chain verifiers retrieve it by looking up the transaction that created the UTxO. `binding_hash` remains in the datum as the sole on-chain cryptographic commitment to the IPFS content.
 
 ---
 
@@ -80,10 +80,9 @@ User validators import the library's on-chain components (invariant checks) and 
 **AccumulatorDatum** (on-chain, minimal) — stores only fields essential for on-chain validation:
 - `descriptor` — tree type, hash algorithm, schema version (immutable per accumulator)
 - `root_hash` — current tree root (needed for proof validation)
-- `leaf_count` — number of leaves (needed for INV-3 monotonicity check)
 - `binding_hash` — cryptographic commitment to the AccumulatorObject in IPFS; `hash_algorithm(CBOR(AccumulatorObject))`; the sole on-chain anchor to off-chain state
-- `prev_tx_ref` — `OutputReference { tx_hash: TxHash, output_index: Int }` of the previous UTxO (ensures chain continuity, INV-4); fully identifies the consumed UTxO
-- `tree_index` — fixed integer identifying this tree within the UTxO (starts at 0, set once at `InitAccumulator`, never changes); multiple trees may share the same UTxO via tag `142` — `tree_index` distinguishes them (INV-5)
+- `prev_tx_ref` — `OutputReference { tx_hash: TxHash, output_index: Int }` of the previous UTxO (ensures chain continuity, INV-3); fully identifies the consumed UTxO
+- `tree_index` — fixed integer identifying this tree within the UTxO (starts at 0, set once at `InitAccumulator`, never changes); multiple trees may share the same UTxO via tag `142` — `tree_index` distinguishes them (INV-4)
 
 > Note: `ipfs_cid` is intentionally absent from the datum. It is off-chain data published in the producing transaction's metadata and recovered by off-chain verifiers via chain indexing.
 
@@ -92,7 +91,7 @@ User validators import the library's on-chain components (invariant checks) and 
 - Key 1: `tree_type` — tree implementation identifier
 - Key 2: `hash_algorithm` — hash function used
 - Key 3: `root_hash` — current root (mirrors datum for verification)
-- Key 4: `leaf_count` — current leaf count (mirrors datum for verification)
+- Key 4: `leaf_count` — current leaf count
 - Key 5: `leaves` — complete leaf data (tree-specific serialization)
 - Key 6: `internal_nodes` — merkle proof nodes (tree-specific serialization)
 - Key 7: `prev_tx_hash` — txHash component of `prev_tx_ref` (anchors this IPFS object to its on-chain position; mirrors datum for off-chain verification, VERIF-5)
@@ -117,15 +116,13 @@ INV-1: `descriptor.tree_type` must not change between prev and new datum (except
 
 INV-2: `descriptor.hash_algorithm` must not change (except via `MigrateDescriptor`).
 
-INV-3: `new_leaf_count >= prev_leaf_count` (no implicit shrinking).
+INV-3: `new.prev_tx_ref` must equal the `OutputReference` of the consumed input (ensures chain continuity).
 
-INV-4: `new.prev_tx_ref` must equal the `OutputReference` of the consumed input (ensures chain continuity).
+INV-4: `tree_index` must not change across state transitions — `new_tree_index == prev_tree_index`. The tree_index is set once at `InitAccumulator` and is immutable for the lifetime of the tree.
 
-INV-5: `tree_index` must not change across state transitions — `new_tree_index == prev_tree_index`. The tree_index is set once at `InitAccumulator` and is immutable for the lifetime of the tree.
+INV-5: `len(binding_hash)` must match expected length for `hash_algorithm`.
 
-INV-6: `len(binding_hash)` must match expected length for `hash_algorithm`.
-
-INV-7: `len(root_hash)` must match expected length for `hash_algorithm`.
+INV-6: `len(root_hash)` must match expected length for `hash_algorithm`.
 
 ## Off-Chain Verification Checks (performed by this library)
 
@@ -157,15 +154,15 @@ D-06: Datum composability using tag `142` for accumulator (Aiken `@tag` annotati
 
 D-07: Redeemer composability using tag `142` for `AccumulatorAction`.
 
-D-08: Library scope — this is an off-chain verification library, not a smart contract. It provides reusable types, proof verifiers, and CBOR utilities. Smart contracts using the library implement on-chain invariant checks (INV-1..7) and authorization logic. Off-chain applications use the library for proof construction, binding hash validation, and state transition verification.
+D-08: Library scope — this is an off-chain verification library, not a smart contract. It provides reusable types, proof verifiers, and CBOR utilities. Smart contracts using the library implement on-chain invariant checks (INV-1..6) and authorization logic. Off-chain applications use the library for proof construction, binding hash validation, and state transition verification.
 
 D-09: Trait-based tree implementations — each tree type (built-in or custom) implements a `ProofVerifier` interface. Built-in trees included in library; custom trees can be user-provided.
 
 D-10: Built-in trees (StandardMerkle, MMR, SparseMerkle, MerklePatriciaForestry) live in the library repo. Off-chain integration tools (IPFS client, proof constructor, verifier) are optional, added in follow-up phases.
 
-D-11: Transaction metadata strategy — `AccumulatorDatum` contains 6 on-chain validation essentials (descriptor, root_hash, leaf_count, binding_hash, prev_tx_ref, tree_index). `ipfs_cid` is absent from the datum: it is off-chain data published in the producing transaction's metadata (key 674), keyed by `(prev_tx_ref.tx_hash, prev_tx_ref.output_index, tree_index)`. `binding_hash` in the datum is the sole on-chain cryptographic commitment to the IPFS content. Off-chain validation: (1) find the tx that produced the UTxO via chain indexing, (2) read `ipfs_cid` from its metadata keyed by `(prev_tx_ref, tree_index)`, (3) fetch AccumulatorObject from IPFS, (4) verify IPFS anchoring (VERIF-5), (5) verify `binding_hash` (VERIF-1), (6) apply tree proof validation (VERIF-2), (7) reconstruct cumulative state by replaying subsequent on-chain transactions.
+D-11: Transaction metadata strategy — `AccumulatorDatum` contains 5 on-chain validation essentials (descriptor, root_hash, binding_hash, prev_tx_ref, tree_index). `ipfs_cid` is absent from the datum: it is off-chain data published in the producing transaction's metadata (key 674), keyed by `(prev_tx_ref.tx_hash, prev_tx_ref.output_index, tree_index)`. `binding_hash` in the datum is the sole on-chain cryptographic commitment to the IPFS content. Off-chain validation: (1) find the tx that produced the UTxO via chain indexing, (2) read `ipfs_cid` from its metadata keyed by `(prev_tx_ref, tree_index)`, (3) fetch AccumulatorObject from IPFS, (4) verify IPFS anchoring (VERIF-5), (5) verify `binding_hash` (VERIF-1), (6) apply tree proof validation (VERIF-2), (7) reconstruct cumulative state by replaying subsequent on-chain transactions.
 
-D-12: Tree identification and multi-tree UTxOs — a single UTxO may carry multiple `AccumulatorDatum` entries via the tag `142` composability (a list of datums). Each entry is distinguished by `tree_index` (an integer starting at 0). The tree_index is fixed at `InitAccumulator` and validated as immutable by INV-5 on every subsequent transition. The composite key `(prev_tx_ref.tx_hash, prev_tx_ref.output_index, tree_index)` uniquely identifies a tree at any given point in its history; the globally unique genesis identity `(genesis_tx_hash, genesis_output_index, tree_index)` is recoverable by following the `prev_tx_ref` chain to `InitAccumulator`. Each IPFS AccumulatorObject embeds `prev_tx_hash`, `prev_output_index`, and `tree_index` (keys 7–9) so that off-chain verifiers and metadata parsers can identify the tree without full chain traversal.
+D-12: Tree identification and multi-tree UTxOs — a single UTxO may carry multiple `AccumulatorDatum` entries via the tag `142` composability (a list of datums). Each entry is distinguished by `tree_index` (an integer starting at 0). The tree_index is fixed at `InitAccumulator` and validated as immutable by INV-4 on every subsequent transition. The composite key `(prev_tx_ref.tx_hash, prev_tx_ref.output_index, tree_index)` uniquely identifies a tree at any given point in its history; the globally unique genesis identity `(genesis_tx_hash, genesis_output_index, tree_index)` is recoverable by following the `prev_tx_ref` chain to `InitAccumulator`. Each IPFS AccumulatorObject embeds `prev_tx_hash`, `prev_output_index`, and `tree_index` (keys 7–9) so that off-chain verifiers and metadata parsers can identify the tree without full chain traversal.
 
 ---
 
@@ -179,11 +176,10 @@ D-12: Tree identification and multi-tree UTxOs — a single UTxO may carry multi
 |------|----------|------|---------------|-----------|
 | `descriptor` | UTxO datum | ~3 bytes | High (essential) | Immutable config; needed for validator routing |
 | `root_hash` | UTxO datum | 32-64 bytes | High (essential) | Required for on-chain invariant validation |
-| `leaf_count` | UTxO datum | ~8 bytes | High (essential) | Required for monotonicity check (INV-3) |
 | `binding_hash` | UTxO datum | 32-64 bytes | High (essential) | Sole on-chain commitment to IPFS content; prevents tampering |
 | `prev_tx_ref` | UTxO datum | ~34 bytes | High (essential) | `OutputReference { tx_hash, output_index }` of consumed UTxO; chain continuity INV-4 |
 | `tree_index` | UTxO datum | ~1 byte | High (essential) | Fixed per-tree id within UTxO; distinguishes multiple trees; INV-5 |
-| **Total Datum Size** | **UTxO** | **~145 bytes** | **Minimal** | Only validation-critical fields |
+| **Total Datum Size** | **UTxO** | **~137 bytes** | **Minimal** | Only validation-critical fields |
 | `ipfs_cid` | Transaction metadata (674) | ~36 bytes | Low | Off-chain only; keyed by `(prev_tx_ref, tree_index)`; not needed on-chain |
 | Full `AccumulatorObject` | IPFS | ~1-100 KB | Free (off-chain) | Complete tree state + on-chain anchors (keys 7–9); permanent storage via Filecoin |
 
@@ -191,7 +187,7 @@ D-12: Tree identification and multi-tree UTxOs — a single UTxO may carry multi
 
 The library provides **on-chain invariant checking**:
 1. **Types** — `AccumulatorDescriptor`, `AccumulatorDatum`, `AccumulatorAction`, `AccumulatorObject` (CBOR schema), serializable to Plutus Data with tag `142`.
-2. **Invariant validators** (in `lib/accumulator/invariants.ak`) — functions to check INV-1..7 (descriptor stability, leaf count monotonicity, tree_index immutability, hash length validation, prev_tx_ref continuity).
+2. **Invariant validators** (in `lib/accumulator/invariants.ak`) — functions to check INV-1..6 (descriptor stability, tree_index immutability, hash length validation, prev_tx_ref continuity).
 3. **Type utilities** — helper functions for type coercion, datum extraction, and action validation.
 
 **User Contracts Implement**:
@@ -206,7 +202,7 @@ The library provides **off-chain verification utilities**:
 2. **Proof verifiers** (trait-based) — tree-specific membership/non-membership proof validation.
 3. **Binding hash utilities** — compute and validate cryptographic commitments to off-chain state (used to validate IPFS content).
 4. **IPFS integration** — resolve `ipfs_cid` from the producing transaction's metadata (key 674, keyed by `(prev_tx_ref, tree_index)`); fetch `AccumulatorObject` from IPFS; validate against `binding_hash` from datum (VERIF-1) and verify embedded anchors (VERIF-5).
-5. **State reconstruction** — reconstruct accumulator state by: (a) finding the tx that produced the UTxO via chain indexing, (b) reading `ipfs_cid` from its metadata keyed by `(prev_tx_ref, tree_index)`, (c) fetching `AccumulatorObject` from IPFS, (d) verifying IPFS anchors (VERIF-5) and `binding_hash` (VERIF-1), (e) replaying subsequent on-chain transactions (redeemer + new datum), (f) validating each transition including INV-5.
+5. **State reconstruction** — reconstruct accumulator state by: (a) finding the tx that produced the UTxO via chain indexing, (b) reading `ipfs_cid` from its metadata keyed by `(prev_tx_ref, tree_index)`, (c) fetching `AccumulatorObject` from IPFS, (d) verifying IPFS anchors (VERIF-5) and `binding_hash` (VERIF-1), (e) replaying subsequent on-chain transactions (redeemer + new datum), (f) validating each transition including INV-4.
 6. **Transaction metadata handling** — parse optional Cardano transaction metadata (key 674) for descriptor-sharing hints and off-chain indexing tags within a transaction batch.
 
 **Built-in Tree Implementations**:
@@ -263,7 +259,7 @@ const isValid =
 1. Initialize Aiken project and `aiken.toml`.
 2. Implement `lib/accumulator/types.ak` (all core types).
 3. Implement `lib/accumulator/cbor.ak` for canonical CBOR serialization/deserialization.
-4. Implement `lib/accumulator/invariants.ak` with INV-1..INV-7 validators and unit tests.
+4. Implement `lib/accumulator/invariants.ak` with INV-1..INV-6 validators and unit tests.
 
 ### Phase 2: Built-in Tree Implementations (Off-Chain Verification)
 
