@@ -1,6 +1,6 @@
-# Cardano Merkle Kit
+# Cardano Accumulator SDK
 
-A Rust/JavaScript library and CLI tool for creating, managing, and verifying merklized structures on the Cardano blockchain.
+A Rust/JavaScript/Aiken SDK for creating, managing, and verifying cryptographic accumulators (Merkle trees, MMR, Sparse Merkle, Patricia Forestry) on the Cardano blockchain.
 
 ## Requirements
 
@@ -21,7 +21,7 @@ A Rust/JavaScript library and CLI tool for creating, managing, and verifying mer
 ## Project Structure
 
 ```
-cardano-merkle-kit/
+cardano-accumulator-sdk/
 ├── Cargo.toml          # Rust project configuration
 ├── src/
 │   └── lib.rs          # Core library implementation

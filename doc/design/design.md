@@ -1,4 +1,4 @@
-# DESIGN.md — Cardano Merkle Accumulator Ecosystem
+# DESIGN.md — Cardano Accumulator SDK
 
 This file unifies the repository's canonical agent guidance and design memory. It consolidates previous long-form agent and memory documents under `doc/design`.
 
@@ -6,7 +6,7 @@ This file unifies the repository's canonical agent guidance and design memory. I
 
 ## Purpose
 
-Provide a single source of truth for agent behavior, repository conventions, design decisions, and next actions for the Cardano Merkle Accumulator Ecosystem. This file consolidates long-form design documents and the decision memory used by maintainers and automation.
+Provide a single source of truth for agent behavior, repository conventions, design decisions, and next actions for the Cardano Accumulator SDK. This file consolidates long-form design documents and the decision memory used by maintainers and automation.
 
 ---
 

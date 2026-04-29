@@ -1,6 +1,6 @@
 ---
 name: software-architect
-description: "Provides repository architecture guidance, code- and test-level design, CI suggestions, and file-level change plans for the Cardano Merkle Accumulator Ecosystem. Use when you need architecture proposals, refactor plans, or test/CI design."
+description: "Provides repository architecture guidance, code- and test-level design, CI suggestions, and file-level change plans for the Cardano Accumulator SDK. Use when you need architecture proposals, refactor plans, or test/CI design."
 argument-hint: "A technical task (e.g., 'design module layout for proof.ak', 'propose CI for Aiken tests', 'refactor extract.ak to be more robust')."
 tools:
   - read
