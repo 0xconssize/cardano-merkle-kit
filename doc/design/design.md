@@ -6,12 +6,12 @@
 
 An off-chain verification library that provides core primitives for accumulators on Cardano. The library is composed of two complementary parts:
 
-**On-chain Validation** (Smart Contract Component):
-- Implemented by user validators (e.g., via Aiken smart contracts)
-- Performs structural consistency checks on the accumulator state (INV-1, INV-2, INV-3, INV-4)
-- Validates that `datum.policy_id` and `datum.token_name` match the `AccumulatorLifecycleToken` `AssetClass` present in the UTxO (INV-1)
-- Chain continuity is guaranteed by the one-shot `AccumulatorLifecycleToken`
-- Does NOT verify IPFS content or cryptographic proofs
+**On-chain Validation** (Smart Contract Component) — three distinct modules under `lib/accumulator/`:
+
+- **Shared types** (`types.ak`) — `AccumulatorDatum`, `AccumulatorAction`, `AccumulatorRedeemer`, and `AccumulatorOperation`; tagged 142 for safe embedding inside user-defined datum and redeemer structures via Plutus Data constructor matching.
+- **Minting policy** (`lifecycle_policy.ak`) — one-shot minting policy for the `AccumulatorLifecycleToken`. Handles `InitAccumulator` (genesis mint) and the remint side of `CheckpointAccumulator`; enforces seed UTxO consumption and asset name derivation (INV-3, INV-6 mint-side).
+- **Invariant library** (`invariants.ak`) — reusable functions called by user spending validators. Enforces structural invariants for `UpdateAccumulator`, `CheckpointAccumulator` (burn-and-transition side), and `RemoveAccumulator`. Does NOT verify IPFS content or cryptographic proofs.
+- Chain continuity is guaranteed by the one-shot `AccumulatorLifecycleToken`; user contracts compose invariant checks with their own authorization logic.
 
 **Off-chain Monitoring**:
 - Provides types, implementations, and utilities for accumulator handling
@@ -61,7 +61,14 @@ User validators import the library's on-chain components (invariant checks) and 
 
 3. Composability of Datum and Redeemer via Plutus Data constructor tag `142`
 
-   Tag `142` is the Plutus Data constructor index assigned to `AccumulatorDatum` and `AccumulatorAction` via Aiken's `@tag(142)` annotation. When either type is encoded as Plutus Data, constructor index 142 is used. This allows user validators to safely embed these types inside larger datum or redeemer structures and pattern-match on them by constructor index without conflicts with other application-defined constructors.
+   Tag `142` is the Plutus Data constructor index assigned to `AccumulatorDatum` and `AccumulatorAction` via Aiken's `@tag(142)` annotation. Plutus Data is a recursive sum type; Aiken allows traversing it and pattern-matching on constructor indices at runtime, making it possible to locate and decode a known library type by its tag even when it is embedded inside an arbitrary outer structure. Constructor index 142 is reserved exclusively for the library's types, ensuring no conflict with user-defined constructors.
+
+   This enables two standard composition patterns used throughout the library:
+
+   - **Datum embedding**: a user validator's datum type includes `AccumulatorDatum` as a field; the spending validator pattern-matches on constructor 142 to extract it and passes it to `invariants.ak`.
+   - **Redeemer embedding**: a user validator's redeemer type includes `AccumulatorAction` as a field; the spending validator pattern-matches on constructor 142 to extract it and dispatch on the variant. The `UpdateAccumulator` variant carries `List<AccumulatorOperation>` directly, so all operation data is self-contained in the action value itself — no additional wrapper type is needed.
+
+   User contracts are not required to use `AccumulatorDatum` or `AccumulatorAction` as top-level types — they embed them inside their own structures and extract them by tag at runtime.
 
 4. Library provides reusable components, not on-chain validators
 
@@ -96,17 +103,34 @@ User validators import the library's on-chain components (invariant checks) and 
 - **`ipfs_cid`** (required per accumulator) — CID of the initial `AccumulatorObject`; keyed by `token_name`.
 - Indexing hints (optional) — labelling which `token_name` corresponds to which domain object.
 
-*Each `UpdateAccumulator` spend transaction:*
-- **`ipfs_cid`** (optional per accumulator updated) — CID of the new `AccumulatorObject`; keyed by `token_name`. May be omitted if the operator defers the IPFS snapshot; state between IPFS publications is reconstructable off-chain from the `AccumulatorOperation` list in each redeemer.
-- Note: Metadata is NOT used for storing full AccumulatorObject (respects 16KB limit); see IPFS for complete state.
-
 *Each `CheckpointAccumulator` transaction:*
 - **`ipfs_cid`** (required per checkpointed accumulator) — CID of the full `AccumulatorObject` snapshot at the checkpoint; keyed by the **new** `token_name`. This is the authoritative IPFS anchor for the new epoch.
 - Note: The checkpoint transaction burns the old `AccumulatorLifecycleToken` and mints a new one; both appear in the same transaction's mint/burn events and establish the epoch boundary on-chain (VERIF-7).
 
-**AccumulatorAction** — user contract actions: InitAccumulator, UpdateAccumulator, CheckpointAccumulator, RemoveAccumulator.
+**AccumulatorAction** (`@tag(142)`) — the four lifecycle actions, each applicable to a specific on-chain contract scope:
 
-**AccumulatorOperation** (on-chain, embedded in `UpdateAccumulator` redeemer) — a single element mutation with its accumulator-specific proof:
+```aiken
+@tag(142)
+type AccumulatorAction {
+  InitAccumulator
+  UpdateAccumulator { operations: List<AccumulatorOperation> }
+  CheckpointAccumulator
+  RemoveAccumulator
+}
+```
+
+| Action | Minting policy | Spending validator | Description |
+|---|:---:|:---:|---|
+| `InitAccumulator` | yes | no | Genesis: consume seed UTxO, mint lifecycle token(s), lock initial datum(s) |
+| `UpdateAccumulator` | no | yes | Spend UTxO, update `state_digest`, re-lock token; carries the list of element operations inline |
+| `CheckpointAccumulator` | yes (remint side) | yes (burn-and-transition side) | Two-script action in one transaction: spending validator authorises the token burn and state transition; minting policy authorises the replacement token mint |
+| `RemoveAccumulator` | no | yes | Spend the UTxO holding the token; the spending validator authorises burning it (quantity −1) in the same transaction |
+
+`RemoveAccumulator` is a spending validator action: on Cardano, burning a token requires spending the UTxO that holds it; the spending validator confirms the burn (INV-4).
+
+`CheckpointAccumulator` is the only action that must satisfy two scripts simultaneously in the same transaction: the spending validator handles the burn side (old token, old datum), and the minting policy handles the mint side (new token, new datum).
+
+**AccumulatorOperation** (on-chain, embedded in `UpdateAccumulator`) — a single element mutation with its accumulator-specific proof:
 - `element: Data` — the element being added or removed; opaque Plutus Data, accumulator-type-specific; not interpreted on-chain
 - `proof: Data` — membership or non-membership proof for the element; opaque Plutus Data, accumulator-type-specific (e.g. Merkle path encoded as a `List<ByteArray>`, RSA witness or KZG opening proof encoded as bytes wrapped in `Data`); not interpreted on-chain
 - `op: OpType` — `AddElement` or `RemoveElement`
